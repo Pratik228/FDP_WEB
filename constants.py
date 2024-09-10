@@ -1,0 +1,5 @@
+DEPARTMENTS = ["CSE", "ISE", "ECE", "EEE", "AI&ML", "Mech", "Civil"]
+SECTIONS = list("ABCDEFGHIJKLMN")
+SEMESTERS = list(range(1, 9))
+CURRENT_YEAR = 2024
+JOINING_YEARS = list(range(CURRENT_YEAR, CURRENT_YEAR - 8, -1))
