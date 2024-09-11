@@ -1,0 +1,13 @@
+version: "3.8"
+
+services:
+  face-recognition-app:
+    build: .
+    ports:
+      - "8501:8501"
+    environment:
+      - FIREBASE_DATABASE_URL=${FIREBASE_DATABASE_URL}
+      - FIREBASE_STORAGE_BUCKET=${FIREBASE_STORAGE_BUCKET}
+      - USE_FIREBASE=true
+    volumes:
+      - ./serviceAccountKey.json:/app/serviceAccountKey.json

@@ -162,10 +162,6 @@ def store_student_details():
             ref.child(student_id).set(data)
 
             st.success(f'Success! Data submitted for {name} with USN {student_id}')
-            
-            # Display submitted data
-            st.markdown("### Submitted Data")
-            st.json(data)
 
     st.markdown('<div class="student-form">', unsafe_allow_html=True)
     st.markdown("#### Instructions:")
@@ -258,7 +254,7 @@ def store_image():
         color: white;
         font-weight: bold;
     }
-    .upload-section, .capture-section {
+    .upload-section {
         background-color: #f0f2f6;
         padding: 20px;
         border-radius: 10px;
@@ -273,15 +269,11 @@ def store_image():
         st.warning("Please enter a USN before proceeding.")
         return
 
-    option = st.radio("Select Option", ("Upload Image", "Take Photo"))
-
-    def get_encoding(image_path):
-        img = cv2.imread(image_path)
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        
-        face_locations = face_recognition.face_locations(img)
+    def get_encoding(image):
+        img_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        face_locations = face_recognition.face_locations(img_rgb)
         if len(face_locations) > 0:
-            encode = face_recognition.face_encodings(img, face_locations)[0]
+            encode = face_recognition.face_encodings(img_rgb, face_locations)[0]
             return encode
         return None
 
@@ -292,13 +284,17 @@ def store_image():
             st.success(f"Saved photo as {file_name}")
             
             # Upload the image to Firebase Storage
-            blob = bucket.blob("Images/" + f"{usn}.jpg")
+            blob = bucket.blob(f"Images/{usn}.jpg")
             blob.upload_from_filename(file_name)
             st.success("Saved photo to Firebase Storage")
 
             # Calculate and store the encoding of the new student's image
-            new_encoding = get_encoding(file_name)
+            new_encoding = get_encoding(image)
             if new_encoding is not None:
+                # Load existing encodings
+                with open("EncodeFile.p", "rb") as f:
+                    encodeKnown, studId = pickle.load(f)
+                
                 encodeKnown.append(new_encoding)
                 studId.append(usn)
 
@@ -309,47 +305,19 @@ def store_image():
             else:
                 st.error("Could not detect a face in the image.")
 
-    if option == "Upload Image":
-        st.markdown("<div class='upload-section'>", unsafe_allow_html=True)
-        uploaded_file = st.file_uploader("Choose an image file", type=["jpg", "jpeg", "png"])
-        if uploaded_file is not None:
-            file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
-            img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+    st.markdown("<div class='upload-section'>", unsafe_allow_html=True)
+    uploaded_file = st.file_uploader("Choose an image file", type=["jpg", "jpeg", "png"])
+    if uploaded_file is not None:
+        file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
+        img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
 
-            # Show a preview of the uploaded image
-            st.image(img, caption="Preview of the uploaded image", width=300)
+        # Show a preview of the uploaded image
+        st.image(img, caption="Preview of the uploaded image", width=300)
 
-            # Add an "Upload" button
-            if st.button("Upload and Process"):
-                process_and_store_image(img)
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    elif option == "Take Photo":
-        st.markdown("<div class='capture-section'>", unsafe_allow_html=True)
-        # Create the "Images" folder if it does not exist
-        if not os.path.exists("Images"):
-            os.makedirs("Images")
-        
-        st.write("Please look at the camera and come a little closer. Click 'Capture Photo' when ready.")
-        
-        if st.button("Capture Photo"):
-            # Initialize the webcam
-            cap = cv2.VideoCapture(0)
-            
-            # Capture a single frame
-            ret, frame = cap.read()
-            
-            if ret:
-                st.image(frame, caption="Captured photo", width=300)
-                
-                if st.button("Upload and Process Captured Photo"):
-                    process_and_store_image(frame)
-            else:
-                st.error("Failed to capture photo. Please try again.")
-            
-            # Release the webcam
-            cap.release()
-        st.markdown("</div>", unsafe_allow_html=True)
+        # Add an "Upload" button
+        if st.button("Upload and Process"):
+            process_and_store_image(img)
+    st.markdown("</div>", unsafe_allow_html=True)
 
 
 def store_encodings():
@@ -358,98 +326,105 @@ def store_encodings():
         subprocess.run(["python", "encoding.py"])
         st.success('Success! Encodings stored.')  
 
-#  Old one changing it completely
-# def take_attendance():
-#     st.subheader("Take Attendance")
-#     if st.button("Take Attendance"):
-#         subprocess.run(["python", "main.py"])
-#     # Add code to take attendance using saved images
-#         st.success('Success! Attendance marked')
-
-# New one with enhanced options
 import dlib
 def _css_to_rect(css):
     return dlib.rectangle(css.left(), css.top(), css.right(), css.bottom())
 
 def take_attendance():
-    st.subheader("Take Attendance")
-    semester = st.selectbox("Select Semester", options=[1, 2, 3, 4, 5, 6, 7, 8])
-    section = st.selectbox("Select Section", options=["A", "B", "C", "D"])
-    department = st.selectbox("Select department", options = ["CSE", "ISE", "ECE", "EEE", "AI&ML", "DS", "Mech", "Civil"])
-    option = st.radio("Select Option", ("Live Video", "Upload Image"))
-    if option == "Live Video":
-        if st.button("Take Attendance"):
-            subprocess.run(["python", "main.py"])
-            st.success('Success! Attendance marked')
-    elif option == "Upload Image":
-        uploaded_file = st.file_uploader("Choose an image file", type=["jpg", "jpeg", "png"])
-        if uploaded_file is not None:
-            # Read in the uploaded image
-            file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
-            img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+    st.markdown("<h2 style='text-align: center; color: #4a4a4a;'>Take Attendance</h2>", unsafe_allow_html=True)
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        semester = st.selectbox("Select Semester", options=SEMESTERS)
+        section = st.selectbox("Select Section", options=SECTIONS)
+    with col2:
+        department = st.selectbox("Select Department", options=DEPARTMENTS)
 
-            # Resize image for faster processing
-            img = cv2.resize(img, (0, 0), fx=0.5, fy=0.5)
-            
+    uploaded_file = st.file_uploader("Upload an image for attendance", type=["jpg", "jpeg", "png"])
+    
+    if uploaded_file is not None:
+        file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
+        img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
 
+        # Display the uploaded image with controlled size
+        col1, col2, col3 = st.columns([1,2,1])
+        with col2:
+            st.image(img, caption="Uploaded Image", use_column_width=True)
 
-            # Detect faces in the image
-            face_locations = face_recognition.face_locations(img) # model="cnn"
+        if st.button("Process Attendance"):
+            with st.spinner("Processing attendance..."):
+                # Resize image for faster processing
+                img = cv2.resize(img, (0, 0), fx=0.5, fy=0.5)
 
-            face_encodings = face_recognition.face_encodings(img, face_locations)
+                # Detect faces in the image
+                face_locations = face_recognition.face_locations(img)
+                face_encodings = face_recognition.face_encodings(img, face_locations)
 
-            # Load known encodings and student IDs
-            encodeKnown, studId = load_known_encodings_and_ids()
+                # Load known encodings and student IDs
+                encodeKnown, studId = load_known_encodings_and_ids()
+                st.write(f"Loaded {len(encodeKnown)} known encodings")
 
-            # Loop through each face encoding detected in the uploaded image
-            marked_students = 0
-            for face_encoding in face_encodings:
-                # Find the closest matching known encoding
-                distances = face_recognition.face_distance(encodeKnown, face_encoding)
-                min_distance_index = np.argmin(distances)
-                min_distance = distances[min_distance_index]
+                # Loop through each face encoding detected in the uploaded image
+                marked_students = []
+                for face_encoding in face_encodings:
+                    # Find the closest matching known encoding
+                    distances = face_recognition.face_distance(encodeKnown, face_encoding)
+                    st.write(f"Calculated {len(distances)} distances")
+                    if len(distances) == 0:
+                        st.warning("No known encodings to compare with.")
+                        continue
 
-                # Set a threshold for the minimum distance to consider a match
-                threshold = 0.7
+                    min_distance_index = np.argmin(distances)
+                    min_distance = distances[min_distance_index]
 
-                # If the minimum distance is below the threshold, mark attendance
-                if min_distance < threshold:
-                    id = studId[min_distance_index]
-                    studentInfo = db.reference(f'Students/{id}').get()
-                    if studentInfo is not None:
-                        datetimeObject = datetime.datetime.strptime(studentInfo['last_attendance'], '%Y-%m-%d %H:%M:%S').replace(tzinfo=local_tz)
-                        secondsElapsed = (datetime.datetime.now(local_tz) - datetimeObject).total_seconds()
+                    # Set a threshold for the minimum distance to consider a match
+                    threshold = 0.6
 
-                        if secondsElapsed > 30:
-                            ref = db.reference(f'Students/{id}')
-                            studentInfo['total_attendance'] += 1
-                            ref.child('total_attendance').set(studentInfo['total_attendance'])
-                            ref.child('last_attendance').set(datetime.datetime.now(local_tz).strftime("%Y-%m-%d %H:%M:%S"))
-                            marked_students += 1
+                    # If the minimum distance is below the threshold, mark attendance
+                    if min_distance < threshold:
+                        id = studId[min_distance_index]
+                        studentInfo = db.reference(f'Students/{id}').get()
+                        if studentInfo is not None:
+                            st.write(f"Student Info: {studentInfo}")
+                            st.write(f"Selected semester: {semester}, section: {section}, department: {department}")
+                            
+                            if (str(studentInfo['semester']) == str(semester) and 
+                                studentInfo['section'] == section and 
+                                studentInfo['department'] == department):
+                                
+                                datetimeObject = datetime.datetime.strptime(studentInfo['last_attendance'], '%Y-%m-%d %H:%M:%S').replace(tzinfo=local_tz)
+                                secondsElapsed = (datetime.datetime.now(local_tz) - datetimeObject).total_seconds()
+
+                                if secondsElapsed > 30:
+                                    ref = db.reference(f'Students/{id}')
+                                    studentInfo['total_attendance'] += 1
+                                    ref.child('total_attendance').set(studentInfo['total_attendance'])
+                                    ref.child('last_attendance').set(datetime.datetime.now(local_tz).strftime("%Y-%m-%d %H:%M:%S"))
+                                    marked_students.append(studentInfo['name'])
+                                else:
+                                    st.warning(f"{studentInfo['name']}'s attendance was already marked within the last 30 seconds.")
+                            else:
+                                st.warning(f"{studentInfo['name']} is not in the selected semester, section, or department.")
+                                st.write(f"Student's semester: {studentInfo['semester']}, section: {studentInfo['section']}, department: {studentInfo['department']}")
                         else:
-                            st.warning(f"{studentInfo['name']}'s attendance was already marked within the last 30 seconds.")
-                    else:
-                        st.warning(f"No student found with ID {id}.")
+                            st.warning(f"No student found with ID {id}.")
 
-            if marked_students == 0:
-                st.warning("No matching faces found in the uploaded image.")
-            else:
-                st.success(f"Attendance marked for {marked_students} students.")
-    st.subheader("Manual Attendance")
+                if len(marked_students) == 0:
+                    st.warning("No matching faces found in the uploaded image.")
+                else:
+                    st.success(f"Attendance marked for {len(marked_students)} students: {', '.join(marked_students)}")
+
+    st.markdown("<h3 style='color: #4a4a4a;'>Manual Attendance</h3>", unsafe_allow_html=True)
     st.write("Mark attendance for students who were not detected:")
 
-    if "load_unmarked_students" not in st.session_state:
-        st.session_state.load_unmarked_students = False
-
     if st.button("Load Unmarked Students"):
-        st.session_state.load_unmarked_students = True
-
-    if st.session_state.load_unmarked_students:
         # Get the attendance data from the "Students" node in the Firebase database
         attendance_ref = db.reference('Students')
         attendance_data = attendance_ref.get()
         attendance_df = pd.DataFrame.from_dict(attendance_data, orient='index')
-        attendance_df = attendance_df[(attendance_df['semester'] == str(semester)) & (attendance_df['section'] == section) & (attendance_df['department'] == department)]
+        attendance_df = attendance_df[(attendance_df['semester'].astype(str) == str(semester)) & 
+                                      (attendance_df['section'] == section) & 
+                                      (attendance_df['department'] == department)]
 
         # Get the last attendance date and time from the "last_attendance" column
         last_attendance = attendance_df["last_attendance"]
@@ -463,14 +438,13 @@ def take_attendance():
                 absent_students.append(i)
 
         # Show the list of students who were not marked present today and use checkboxes
-        students_to_mark = {}
         if len(absent_students) > 0:
             st.write("Students not marked present today:")
+            students_to_mark = {}
             for usn in absent_students:
                 students_to_mark[usn] = st.checkbox(f"{usn}: {attendance_data[usn]['name']}")
 
-            # Provide an option to mark attendance manually
-            if st.button("Mark Attendance"):
+            if st.button("Mark Selected Attendance"):
                 for usn, mark_attendance in students_to_mark.items():
                     if mark_attendance:
                         studentInfo = db.reference(f'Students/{usn}').get()
@@ -485,50 +459,59 @@ def take_attendance():
         else:
             st.success("All students are marked present today.")
 
-
  
 def check_attendance():
     st.subheader("Check Attendance")
-    # Get the attendance data from the "Students" node in the Firebase database
-    semester = st.selectbox("Select Semester", options=[1, 2, 3, 4, 5, 6, 7, 8])
-    section = st.selectbox("Select Section", options=["A", "B", "C", "D"])
-    department = st.selectbox("Select department", options = ["CSE", "ISE", "ECE", "EEE", "AI&ML", "DS", "Mech", "Civil"])
+    
+    semester = st.selectbox("Select Semester", options=SEMESTERS)
+    section = st.selectbox("Select Section", options=SECTIONS)
+    department = st.selectbox("Select department", options=DEPARTMENTS)
 
     attendance_ref = db.reference('Students')
     attendance_data = attendance_ref.get()
 
-    # Create a pandas dataframe from the attendance data
-    # attendance_df = pd.DataFrame.from_dict(attendance_data, orient='index')
-    attendance_df = pd.DataFrame.from_dict(attendance_data, orient='index')
-    attendance_df = attendance_df[(attendance_df['semester'] == str(semester)) & (attendance_df['section'] == section) & (attendance_df['department']==department)]
+    if not attendance_data:
+        st.warning("No attendance data found.")
+        return
 
+    # Create a pandas dataframe from the attendance data
+    attendance_df = pd.DataFrame.from_dict(attendance_data, orient='index')
+    
+    # Convert semester to string for comparison
+    attendance_df['semester'] = attendance_df['semester'].astype(str)
+    
+    # Filter the dataframe
+    filtered_df = attendance_df[
+        (attendance_df['semester'] == str(semester)) & 
+        (attendance_df['section'] == section) & 
+        (attendance_df['department'] == department)
+    ]
+
+    st.write(f"Total students: {len(attendance_df)}")
+    st.write(f"Filtered students: {len(filtered_df)}")
 
     # Get the last attendance date and time from the "last_attendance" column
-    last_attendance = attendance_df["last_attendance"]
+    last_attendance = filtered_df["last_attendance"]
     present_today = 0
 
     # Check if the last attendance date matches today's date
     today = datetime.datetime.now(local_tz).strftime("%Y-%m-%d")
-    for i, date_time in last_attendance.items():
+    for date_time in last_attendance:
         date = date_time.split(" ")[0]
         if date == today:
             present_today += 1
 
     # Display the attendance data in a table
-    st.dataframe(attendance_df)
+    st.dataframe(filtered_df)
 
     # Display a message indicating the number of students present today
     if present_today == 0:
         st.warning("No students are present today.")
     else:
-        # st.success(f"{present_today} students are present today!")
         st.success(f"{present_today} students are present in section {section} today!")
 
     # Create a button to download the CSV file
-    csv = attendance_df.to_csv(index=False)
-    b64 = base64.b64encode(csv.encode()).decode()
-    href = f'<a href="data:file/csv;base64,{b64}" download="attendance.csv">Download CSV file</a>'
-    # st.markdown(href, unsafe_allow_html=True)
+    csv = filtered_df.to_csv(index=False)
     st.download_button(label="Download CSV file", data=csv, file_name=f"attendance_{today}.csv", mime="text/csv")
 
 

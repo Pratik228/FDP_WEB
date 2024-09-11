@@ -1,51 +1,55 @@
 import cv2
 import face_recognition
-import pickle
-import os
-
 import firebase_admin
-from firebase_admin import credentials
-from firebase_admin import db
-from firebase_admin import storage
+from firebase_admin import credentials, db, storage
+import numpy as np
+import os
+import tempfile  # Add this import
 
+# Initialize Firebase
 cred = credentials.Certificate("serviceAccountKey.json")
 firebase_admin.initialize_app(cred, {
-    'databaseURL' : 'https://facialattendance-d2c63-default-rtdb.firebaseio.com/',
-    'storageBucket' : 'facialattendance-d2c63.appspot.com'
-    })
+    'databaseURL': os.environ.get('FIREBASE_DATABASE_URL'),
+    'storageBucket': os.environ.get('FIREBASE_STORAGE_BUCKET')
+})
 
-# Importing images to list
-folderPath = 'Images'
-modePath = os.listdir(folderPath)
-imgList = []
-studId = []
-for path in modePath:
-    imgList.append(cv2.imread(os.path.join(folderPath, path)))
-    studId.append(os.path.splitext(path)[0])
-
-    fileName = f'{folderPath}/{path}'
+def encode_and_store():
     bucket = storage.bucket()
-    blob = bucket.blob(fileName)
-    blob.upload_from_filename(fileName)
-    print(path)
+    ref = db.reference('Encodings')
 
-def findEncodings(imgList):
-    encodeList=[]
-    for img in imgList:
-        img = cv2.cvtColor(img,cv2.COLOR_BGR2RGB)
-        face_locations = face_recognition.face_locations(img)
-        if len(face_locations) > 0:
-            encode = face_recognition.face_encodings(img, face_locations)[0]
-            encodeList.append(encode)
+    # List all files in the 'Images' folder of Firebase Storage
+    blobs = bucket.list_blobs(prefix='Images/')
 
-    return encodeList
+    for blob in blobs:
+        if blob.name.endswith(('.jpg', '.jpeg', '.png')):
+            # Download image to a temporary file
+            _, temp_local_filename = tempfile.mkstemp()
+            blob.download_to_filename(temp_local_filename)
 
-encodeKnown = findEncodings(imgList)
-encodeKnownwithIds = [encodeKnown, studId]
-print(encodeKnown)
+            # Read the image
+            img = cv2.imread(temp_local_filename)
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            
+            # Generate encoding
+            face_locations = face_recognition.face_locations(img)
+            if face_locations:
+                encode = face_recognition.face_encodings(img, face_locations)[0]
+                student_id = os.path.splitext(os.path.basename(blob.name))[0]
+                
+                # Store encoding in Firebase Realtime Database
+                ref.child(student_id).set({
+                    'encoding': encode.tolist(),
+                    'name': student_id
+                })
+                
+                print(f"Encoded and stored {student_id}")
+            else:
+                print(f"No face detected in {blob.name}")
 
-file = open("EncodeFile.p", 'wb')
-pickle.dump(encodeKnownwithIds, file)
-file.close()
+            # Remove the temporary file
+            os.remove(temp_local_filename)
 
-print("File saved successfully")
+    print("All encodings stored in Firebase Realtime Database")
+
+if __name__ == "__main__":
+    encode_and_store()
